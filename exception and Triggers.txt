@@ -1,0 +1,239 @@
+
+
+
+
+--EXCEPTION 2
+
+CREATE OR REPLACE PROCEDURE FLIGHTSBYSTATUS 
+(
+  IN_STATUS IN VARCHAR2
+) AS 
+ 
+CURSOR fSTATUS IS
+  SELECT DISTINCT f.FLIGHT_CODE, al.AL_NAME, f.ARRIVAL, f.departure, f.SOURCE, f.DESTINATION, f.STATUS, f.FLIGHTTYPE
+  FROM Airline al, Airport ap, flight f
+  WHERE al.AIRLINEID = f.AIRLINEID
+    AND f.STATUS = IN_STATUS;
+ 
+FlightStatus fSTATUS%ROWTYPE;
+  
+BEGIN
+  OPEN fSTATUS;
+  LOOP
+    FETCH fSTATUS INTO FlightStatus;
+    EXIT WHEN fSTATUS%NOTFOUND;
+    
+    -- Check for invalid data and raise exception if necessary
+    IF FlightStatus.FLIGHT_CODE IS NULL THEN
+      RAISE_APPLICATION_ERROR(-20001, 'Invalid data: FLIGHT_CODE is NULL');
+    END IF;
+    
+    IF FlightStatus.AL_NAME IS NULL THEN
+      RAISE_APPLICATION_ERROR(-20002, 'Invalid data: AL_NAME is NULL');
+    END IF;
+    
+    -- Print the flight details if no exception is raised
+    DBMS_OUTPUT.PUT_LINE(FlightStatus.FLIGHT_CODE || '  ' || FlightStatus.AL_NAME || '  ' || FlightStatus.ARRIVAL || '  ' || FlightStatus.departure || '  ' || FlightStatus.Source || '  ' || FlightStatus.DESTINATION || '  ' || FlightStatus.STATUS || '  ' || FlightStatus.FLIGHTTYPE);
+    
+  END LOOP;
+  CLOSE fSTATUS;
+  
+EXCEPTION
+  WHEN OTHERS THEN
+    DBMS_OUTPUT.PUT_LINE('Error: ' || SQLERRM);
+    -- Handle the exception as per your requirement
+    
+END FLIGHTSBYSTATUS;
+/
+
+--EXCEPTION 3(TRIGGER)
+
+CREATE OR REPLACE TRIGGER DELAYEDFLIGHTS
+AFTER INSERT ON FLIGHT
+FOR EACH ROW
+BEGIN
+  IF UPDATING('STATUS') THEN
+    INSERT INTO DELAYED_FLIGHTS (FLIGHT_CODE, SOURCE, DESTINATION, AIRLINEID, REPORT_TIME)
+    VALUES (:new.flight_code, :new.source, :new.destination, :new.airlineid, SYSDATE);
+  END IF;
+EXCEPTION
+  WHEN DUP_VAL_ON_INDEX THEN
+    -- Handle the specific exception for duplicate value on an index
+    -- Add your custom error handling logic here
+    DBMS_OUTPUT.PUT_LINE('Duplicate value on index');
+    
+  WHEN OTHERS THEN
+    -- Handle all other exceptions
+    -- Add your custom error handling logic here
+    DBMS_OUTPUT.PUT_LINE('Error: ' || SQLERRM);
+END;
+/
+
+--EXCEPTION 4(TRIGGER) Updated Salary
+
+CREATE OR REPLACE TRIGGER UPDATEDSalary
+BEFORE INSERT OR UPDATE OF SALARY ON EMPLOYEE2
+FOR EACH ROW
+DECLARE 
+  JOBTYPE EMPLOYEE2.JOBTYPE%TYPE;
+BEGIN
+  JOBTYPE := :NEW.JOBTYPE;
+
+  BEGIN -- Start of Strong Exception Handler
+    CASE
+      WHEN JOBTYPE = 'Administrative Support' THEN
+        :NEW.SALARY := :NEW.SALARY + (:NEW.SALARY * 0.10);
+      WHEN JOBTYPE = 'ENGINEER' THEN
+        :NEW.SALARY := :NEW.SALARY + (:NEW.SALARY * 0.05);
+      WHEN JOBTYPE = 'TRAFFIC MONITOR' THEN
+        :NEW.SALARY := :NEW.SALARY + (:NEW.SALARY * 0.25);
+      WHEN JOBTYPE = 'AIRPORT AUTHORITY' THEN
+        :NEW.SALARY := :NEW.SALARY + (:NEW.SALARY * 0.45);
+      ELSE
+        -- Raise a strong exception when none of the cases match
+        RAISE_APPLICATION_ERROR(-20001, 'Invalid JOBTYPE: ' || JOBTYPE);
+    END CASE;
+  END; -- End of Strong Exception Handler
+END;
+/
+
+
+--EXCEPTION 5(
+
+CREATE OR REPLACE TRIGGER TICKET_PRICE_HISTORY
+BEFORE UPDATE ON TICKET2
+FOR EACH ROW
+DECLARE
+  PRAGMA AUTONOMOUS_TRANSACTION; -- Enable autonomous transaction for exception handling
+  
+  l_duplicate_key EXCEPTION;
+  PRAGMA EXCEPTION_INIT(l_duplicate_key, -1);
+
+BEGIN
+  IF :NEW.PRICE <> :OLD.PRICE THEN
+    BEGIN -- Exception Handling Block
+      INSERT INTO TICKET_PRICE_HISTORY
+      VALUES (:NEW.DATE_OF_BOOKING, :NEW.SOURCE, :NEW.DESTINATION, :NEW.CLASS, :NEW.PRICE);
+      
+      COMMIT; -- Commit the transaction
+      
+    EXCEPTION
+      WHEN l_duplicate_key THEN
+        ROLLBACK; -- Rollback the transaction if duplicate key violation occurs
+        
+        -- Raise a custom exception to notify the caller
+        RAISE_APPLICATION_ERROR(-20001, 'Duplicate key violation. Cannot insert duplicate entry into TICKET_PRICE_HISTORY.');
+        
+      WHEN OTHERS THEN
+        ROLLBACK; -- Rollback the transaction for any other exception
+        
+        -- Raise a custom exception to notify the caller
+        RAISE_APPLICATION_ERROR(-20002, 'An error occurred while inserting data into TICKET_PRICE_HISTORY. Please contact the system administrator.');
+    END;
+  END IF;
+END;
+/
+
+
+--EXTRA TRIGGER
+
+CREATE OR REPLACE TRIGGER EMPLOYEE_SALARY_CHECK
+BEFORE INSERT OR UPDATE ON EMPLOYEE
+FOR EACH ROW
+DECLARE
+  l_min_salary NUMBER := 5000;
+  
+BEGIN
+  IF :NEW.SALARY < l_min_salary THEN
+    -- Raise a custom exception to notify the caller
+    RAISE_APPLICATION_ERROR(-20001, 'Invalid salary. Salary must be greater than or equal to ' || l_min_salary || '.');
+  END IF;
+  
+  
+
+END;
+/
+
+
+--More Trigger for EMPLOYEE1 table
+
+CREATE OR REPLACE TRIGGER EMPLOYEE1_AGE_LIMIT
+BEFORE INSERT OR UPDATE OF AGE ON EMPLOYEE1
+FOR EACH ROW
+DECLARE
+  l_age_limit INTEGER := 18; -- Minimum age limit
+  
+BEGIN
+  IF :NEW.AGE < l_age_limit THEN
+    RAISE_APPLICATION_ERROR(-20001, 'Age must be greater than or equal to ' || l_age_limit || '.');
+  END IF;
+  
+EXCEPTION
+  WHEN OTHERS THEN
+    -- Log the error or perform any necessary error handling
+    -- You can raise another exception if needed or simply omit this block
+
+END;
+/
+
+
+CREATE OR REPLACE TRIGGER EMPLOYEE1_PHONE_FORMAT
+BEFORE INSERT OR UPDATE OF PHONE ON EMPLOYEE1
+FOR EACH ROW
+BEGIN
+  IF LENGTH(TO_CHAR(:NEW.PHONE)) <> 10 THEN
+    RAISE_APPLICATION_ERROR(-20003, 'Invalid phone number format. Phone number must have 10 digits.');
+  END IF;
+  
+EXCEPTION
+  WHEN OTHERS THEN
+    -- Log the error or perform any necessary error handling
+    -- You can raise another exception if needed or simply omit this block
+
+END;
+/
+
+
+CREATE OR REPLACE TRIGGER TICKET1_SEATNO_FORMAT
+BEFORE INSERT OR UPDATE OF SEATNO ON TICKET1
+FOR EACH ROW
+BEGIN
+  IF REGEXP_LIKE(:NEW.SEATNO, '[A-Z][0-9]{1,3}') THEN
+    -- Valid seat number format (e.g., A10, B234)
+    NULL;
+  ELSE
+    RAISE_APPLICATION_ERROR(-20001, 'Invalid seat number format. Seat number must start with a letter followed by up to 3 digits.');
+  END IF;
+  
+ 
+
+END;
+/
+CREATE OR REPLACE TRIGGER TICKET1_VALIDATE_CANCELLATION_DATE
+BEFORE UPDATE ON TICKET1
+FOR EACH ROW
+DECLARE
+  v_current_date DATE := SYSDATE;
+BEGIN
+  IF :NEW.DATE_OF_CANCELLATION IS NOT NULL AND :NEW.DATE_OF_CANCELLATION < v_current_date THEN
+    RAISE_APPLICATION_ERROR(-20001, 'Cancellation date cannot be in the past.');
+  END IF;
+END;
+/
+
+CREATE OR REPLACE TRIGGER TICKET1_VALIDATE_CANCELLATION_DATE
+BEFORE UPDATE OF DATE_OF_CANCELLATION ON TICKET1
+FOR EACH ROW
+BEGIN
+  IF :NEW.DATE_OF_CANCELLATION IS NOT NULL THEN
+    IF :NEW.DATE_OF_CANCELLATION < :NEW.DATE_OF_BOOKING THEN
+      RAISE_APPLICATION_ERROR(-20003, 'Invalid cancellation date. Cancellation date cannot be earlier than the booking date.');
+    END IF;
+  END IF;
+  
+
+
+END;
+/
+
+
